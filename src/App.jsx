@@ -107,28 +107,20 @@ function saveJSON(tasks, startDate, durationMonths, lang, projectTitle) {
     URL.revokeObjectURL(url);
 }
 
-// ─── LOAD SAVED STATE FROM LOCALSTORAGE ──────────────────────
-function loadSaved() {
-    try {
-        const raw = localStorage.getItem('gantt-project');
-        if (raw) return JSON.parse(raw);
-    } catch { /* ignore parse errors */ }
-    return null;
-}
-const __saved = loadSaved();
+// (localStorage loading removed -- using Firebase only)
 
 // ═══════════════════════════════════════════════════════════
 export default function App() {
-    const [lang, setLang] = useState(() => __saved?.config?.lang || 'vi');
-    const [startDate, setStartDate] = useState(() => __saved?.config?.startDate || '2025-01-06');
-    const [durationMonths, setDurationMonths] = useState(() => __saved?.config?.durationMonths || 9);
-    const { state: tasks, setState: setTasks, undo, redo, canUndo, canRedo } = useHistory(renumberTasks(__saved?.tasks || INITIAL_DATA));
+    const [lang, setLang] = useState('vi');
+    const [startDate, setStartDate] = useState('2025-01-06');
+    const [durationMonths, setDurationMonths] = useState(9);
+    const { state: tasks, setState: setTasks, undo, redo, canUndo, canRedo } = useHistory(renumberTasks(INITIAL_DATA));
     const [showGuide, setShowGuide] = useState(false);
     const [showConfig, setShowConfig] = useState(false);
     const [showDashboard, setShowDashboard] = useState(true);
     const [toast, setToast] = useState(null);
-    const [projectTitle, setProjectTitle] = useState(() => __saved?.config?.projectTitle || '');
-    const [cellWidth, setCellWidth] = useState(() => __saved?.config?.cellWidth || DEFAULT_CELL_WIDTH);
+    const [projectTitle, setProjectTitle] = useState('');
+    const [cellWidth, setCellWidth] = useState(DEFAULT_CELL_WIDTH);
     const [darkMode, setDarkMode] = useState(() => localStorage.getItem('gantt-dark') === 'true');
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [showTaskCol, setShowTaskCol] = useState(true);
@@ -160,18 +152,8 @@ export default function App() {
         localStorage.setItem('gantt-dark', darkMode);
     }, [darkMode]);
 
-    // ─── AUTO-SAVE to localStorage + Firestore (debounced) ───
+    // ─── AUTO-SAVE to Firestore ONLY (debounced 2s) ──────────
     useEffect(() => {
-        // Instant localStorage save (500ms)
-        const localTimer = setTimeout(() => {
-            const data = {
-                config: { startDate, durationMonths, lang, projectTitle, cellWidth },
-                tasks
-            };
-            localStorage.setItem('gantt-project', JSON.stringify(data));
-        }, 500);
-
-        // Firestore save (2s debounce to reduce writes)
         const fbTimer = setTimeout(() => {
             const data = {
                 config: { startDate, durationMonths, lang, projectTitle, cellWidth },
@@ -182,11 +164,14 @@ export default function App() {
             });
         }, 2000);
 
-        return () => { clearTimeout(localTimer); clearTimeout(fbTimer); };
+        return () => clearTimeout(fbTimer);
     }, [tasks, startDate, durationMonths, lang, projectTitle, cellWidth]);
 
     // ─── LOAD FROM FIRESTORE on mount ────────────────────────
     useEffect(() => {
+        // Clear local storage as requested
+        localStorage.removeItem('gantt-project');
+
         loadFromFirestore().then(cloud => {
             if (cloud && cloud.tasks) {
                 setTasks(renumberTasks(cloud.tasks));
