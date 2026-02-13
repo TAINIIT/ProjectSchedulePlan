@@ -16,6 +16,7 @@ import { cn } from './lib/utils';
 import { exportExcel } from './utils/exportExcel';
 import { exportPdf, exportImage } from './utils/exportPdf';
 import { useHistory } from './hooks/useHistory';
+import { saveToFirestore, loadFromFirestore } from './utils/firebase';
 
 const PADDING_COLS = 2;
 const DEFAULT_CELL_WIDTH = 48;
@@ -159,17 +160,48 @@ export default function App() {
         localStorage.setItem('gantt-dark', darkMode);
     }, [darkMode]);
 
-    // ─── AUTO-SAVE to localStorage (debounced 500ms) ─────────
+    // ─── AUTO-SAVE to localStorage + Firestore (debounced) ───
     useEffect(() => {
-        const timer = setTimeout(() => {
+        // Instant localStorage save (500ms)
+        const localTimer = setTimeout(() => {
             const data = {
                 config: { startDate, durationMonths, lang, projectTitle, cellWidth },
                 tasks
             };
             localStorage.setItem('gantt-project', JSON.stringify(data));
         }, 500);
-        return () => clearTimeout(timer);
+
+        // Firestore save (2s debounce to reduce writes)
+        const fbTimer = setTimeout(() => {
+            const data = {
+                config: { startDate, durationMonths, lang, projectTitle, cellWidth },
+                tasks
+            };
+            saveToFirestore(data).then(ok => {
+                if (ok) console.log('[Firebase] Saved');
+            });
+        }, 2000);
+
+        return () => { clearTimeout(localTimer); clearTimeout(fbTimer); };
     }, [tasks, startDate, durationMonths, lang, projectTitle, cellWidth]);
+
+    // ─── LOAD FROM FIRESTORE on mount ────────────────────────
+    useEffect(() => {
+        loadFromFirestore().then(cloud => {
+            if (cloud && cloud.tasks) {
+                setTasks(renumberTasks(cloud.tasks));
+                if (cloud.config) {
+                    setStartDate(cloud.config.startDate || '2025-01-06');
+                    setDurationMonths(cloud.config.durationMonths || 9);
+                    setLang(cloud.config.lang || 'vi');
+                    setProjectTitle(cloud.config.projectTitle || '');
+                    setCellWidth(cloud.config.cellWidth || DEFAULT_CELL_WIDTH);
+                }
+                console.log('[Firebase] Loaded from cloud');
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ─── KEYBOARD SHORTCUTS ──────────────────────────────────
     useEffect(() => {
