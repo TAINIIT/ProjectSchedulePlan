@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { GripVertical, Plus, Trash2, MapPin, CornerDownRight, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const COLOR_PALETTE = [
     '#4F46E5', '#059669', '#0891B2', '#D97706',
@@ -26,6 +26,8 @@ export const GanttRow = ({
     isSelected, onSelect, showTaskCol = true,
     isCollapsed, onToggleCollapse, todayIndex,
     collapsedMonths = new Set(),
+    density = 'comfort',
+    ...props
 }) => {
     const [isHovered, setIsHovered] = useState(false);
     const [showPicker, setShowPicker] = useState(false);
@@ -143,11 +145,13 @@ export const GanttRow = ({
 
     return (
         <motion.div layout
+            {...props}
             onClick={handleRowClick}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             className={cn(
-                "flex group border-b border-slate-50 dark:border-slate-700/50 transition-colors h-12 relative",
+                "flex group border-b border-slate-50 dark:border-slate-700/50 transition-colors relative",
+                density === 'compact' ? "h-8 text-xs" : "h-12",
                 isPayment ? "bg-amber-50/20 hover:bg-amber-50/40 dark:bg-amber-900/10 dark:hover:bg-amber-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-700/30",
                 isSelected && "bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-500"
             )}
@@ -319,7 +323,8 @@ export const GanttRow = ({
                                 onMouseEnter={handleBarMouseEnter}
                                 onMouseLeave={handleBarMouseLeave}
                                 className={cn(
-                                    "absolute top-2 bottom-2 rounded-md shadow-sm cursor-move flex items-center z-10 hover:shadow-lg transition-shadow group/bar",
+                                    "absolute rounded-md shadow-sm cursor-move flex items-center z-10 hover:shadow-lg transition-shadow group/bar",
+                                    density === 'compact' ? "top-1 bottom-1" : "top-2 bottom-2",
                                     isSub && "border-l-[3px]"
                                 )}
                                 style={{
@@ -370,24 +375,38 @@ export const GanttRow = ({
                                     <div className="w-0.5 h-3 bg-white/60 rounded-full" />
                                 </div>
 
-                                {tooltip && tooltipPos && createPortal(
-                                    <div className="fixed z-[9999] bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] rounded-lg shadow-xl px-3 py-2 pointer-events-none whitespace-nowrap min-w-[180px]"
-                                        style={{
-                                            top: tooltipPos.top,
-                                            left: tooltipPos.left,
-                                            transform: 'translateX(-50%)',
-                                            filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))',
-                                        }}>
-                                        <div className="font-bold text-xs mb-1 truncate max-w-[200px]">{tooltip.name}</div>
-                                        <div className="flex items-center gap-3 text-[10px] opacity-80">
-                                            <span>📅 {tooltip.start} → {tooltip.end}</span>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-[10px] opacity-80 mt-0.5">
-                                            <span>⏱ {tooltip.duration}</span>
-                                            <span>📊 {tooltip.progress}</span>
-                                        </div>
-                                        <div className={`absolute left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-100 rotate-45 ${tooltipPos.below ? '-top-1' : '-bottom-1'}`} />
-                                    </div>,
+                                {createPortal(
+                                    <AnimatePresence>
+                                        {tooltip && tooltipPos && (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                exit={{ opacity: 0, scale: 0.9, y: 5 }}
+                                                transition={{ duration: 0.15, ease: "easeOut" }}
+                                                className="fixed z-[9999] bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] rounded-lg shadow-xl px-3 py-2 pointer-events-none whitespace-nowrap min-w-[180px]"
+                                                style={{
+                                                    top: tooltipPos.top,
+                                                    left: tooltipPos.left,
+                                                    transformOrigin: tooltipPos.below ? 'center top' : 'center bottom',
+                                                    transform: 'translateX(-50%)', // This conflicts with motion transform, handled below
+                                                    left: tooltipPos.left,
+                                                    // x: '-50%' is better via motion style or handle in positioning
+                                                }}>
+                                                {/* Re-apply translateX via style prop if not controlled by motion, but motion controls transform. 
+                                                    Better to wrap in a container or use x: "-50%" in initial/animate 
+                                                */}
+                                                <div className="font-bold text-xs mb-1 truncate max-w-[200px]">{tooltip.name}</div>
+                                                <div className="flex items-center gap-3 text-[10px] opacity-80">
+                                                    <span>📅 {tooltip.start} → {tooltip.end}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-[10px] opacity-80 mt-0.5">
+                                                    <span>⏱ {tooltip.duration}</span>
+                                                    <span>📊 {tooltip.progress}</span>
+                                                </div>
+                                                <div className={`absolute left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-100 rotate-45 ${tooltipPos.below ? '-top-1' : '-bottom-1'}`} />
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>,
                                     document.body
                                 )}
                             </div>

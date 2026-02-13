@@ -3,20 +3,22 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Plus, Upload, Save, Globe, Calendar, Clock,
     ChevronDown, ChevronUp, CreditCard, Info, Layers,
-    FileSpreadsheet, HelpCircle, X, ZoomIn, ZoomOut, Maximize2,
+    FileSpreadsheet, HelpCircle, X, ZoomIn, ZoomOut, Maximize2, Minimize2,
     Eye, EyeOff, Moon, Sun, Undo2, Redo2, FileImage, FileText,
     CheckSquare, XSquare, Paintbrush, Move, PanelLeftClose, PanelLeft
 } from 'lucide-react';
 import { HeaderTimeline } from './components/gantt/HeaderTimeline';
 import { GanttRow } from './components/gantt/GanttRow';
 import { Button } from './components/ui/Button';
+import { OnboardingTour } from './components/ui/OnboardingTour';
 import { Card } from './components/ui/Card';
 import { TRANSLATIONS, INITIAL_DATA } from './constants/data';
 import { cn } from './lib/utils';
 import { exportExcel } from './utils/exportExcel';
 import { exportPdf, exportImage } from './utils/exportPdf';
 import { useHistory } from './hooks/useHistory';
-import { saveToFirestore, loadFromFirestore } from './utils/firebase';
+import { saveToFirestore, loadFromFirestore, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './utils/firebase';
+import { LogIn, LogOut, User } from 'lucide-react';
 
 const PADDING_COLS = 2;
 const DEFAULT_CELL_WIDTH = 48;
@@ -118,6 +120,8 @@ export default function App() {
     const [showGuide, setShowGuide] = useState(false);
     const [showConfig, setShowConfig] = useState(false);
     const [showDashboard, setShowDashboard] = useState(true);
+    const [density, setDensity] = useState('comfort'); // 'comfort' | 'compact'
+    const [showTour, setShowTour] = useState(false); // Onboarding tour
     const [toast, setToast] = useState(null);
     const [projectTitle, setProjectTitle] = useState('');
     const [cellWidth, setCellWidth] = useState(DEFAULT_CELL_WIDTH);
@@ -125,7 +129,64 @@ export default function App() {
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [showTaskCol, setShowTaskCol] = useState(true);
     const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+
     const [collapsedMonths, setCollapsedMonths] = useState(new Set());
+    const [user, setUser] = useState(null); // Auth state
+
+    const showToast = useCallback((msg, type = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 3000);
+    }, []);
+
+    const handleLogin = async () => {
+        try {
+            await signInWithPopup(auth, googleProvider);
+        } catch (error) {
+            console.error(error);
+            showToast('Login failed', 'danger');
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            showToast('Logged out');
+            // Optionally reset state to default
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    // ─── AUTH LISTENER ───────────────────────────────────────
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            setUser(currentUser);
+            if (currentUser) {
+                // Load user data
+                const data = await loadFromFirestore(currentUser.uid);
+                if (data) {
+                    // Restore data logic with safety checks
+                    if (data.config) {
+                        if (data.config.startDate) setStartDate(data.config.startDate);
+                        if (data.config.durationMonths) setDurationMonths(data.config.durationMonths);
+                        if (data.config.lang) setLang(data.config.lang);
+                        if (data.config.projectTitle !== undefined) setProjectTitle(data.config.projectTitle);
+                    }
+                    if (data.tasks && Array.from(data.tasks).length > 0) {
+                        setTasks(renumberTasks(data.tasks));
+                    }
+                    showToast(lang === 'vi' ? `Xin chào ${currentUser.displayName}!` : `Welcome ${currentUser.displayName}!`);
+                }
+            } else {
+                // Handle logout or initial load (maybe load default demo data?)
+                const data = await loadFromFirestore(null); // Load 'default' doc
+                if (data && data.tasks) {
+                    setTasks(renumberTasks(data.tasks));
+                }
+            }
+        });
+        return () => unsubscribe();
+    }, [lang, showToast, setTasks]);
 
     const dragRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -153,39 +214,27 @@ export default function App() {
     }, [darkMode]);
 
     // ─── AUTO-SAVE to Firestore ONLY (debounced 2s) ──────────
+    const handleSaveCloud = useCallback(async () => {
+        const success = await saveToFirestore({
+            config: { startDate, durationMonths, lang, projectTitle },
+            tasks
+        }, user ? user.uid : null);
+
+        if (success) showToast(lang === 'vi' ? 'Đã lưu lên Cloud!' : 'Saved to Cloud!');
+        else showToast(lang === 'vi' ? 'Lỗi khi lưu!' : 'Save failed!', 'danger');
+    }, [tasks, startDate, durationMonths, lang, projectTitle, showToast, user]);
+
     useEffect(() => {
         const fbTimer = setTimeout(() => {
-            const data = {
-                config: { startDate, durationMonths, lang, projectTitle, cellWidth },
-                tasks
-            };
-            saveToFirestore(data).then(ok => {
-                if (ok) console.log('[Firebase] Saved');
-            });
+            handleSaveCloud();
         }, 2000);
 
         return () => clearTimeout(fbTimer);
-    }, [tasks, startDate, durationMonths, lang, projectTitle, cellWidth]);
+    }, [tasks, startDate, durationMonths, lang, projectTitle, handleSaveCloud]);
 
-    // ─── LOAD FROM FIRESTORE on mount ────────────────────────
     useEffect(() => {
-        // Clear local storage as requested
+        // Clear local storage legacy data
         localStorage.removeItem('gantt-project');
-
-        loadFromFirestore().then(cloud => {
-            if (cloud && cloud.tasks) {
-                setTasks(renumberTasks(cloud.tasks));
-                if (cloud.config) {
-                    setStartDate(cloud.config.startDate || '2025-01-06');
-                    setDurationMonths(cloud.config.durationMonths || 9);
-                    setLang(cloud.config.lang || 'vi');
-                    setProjectTitle(cloud.config.projectTitle || '');
-                    setCellWidth(cloud.config.cellWidth || DEFAULT_CELL_WIDTH);
-                }
-                console.log('[Firebase] Loaded from cloud');
-            }
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ─── KEYBOARD SHORTCUTS ──────────────────────────────────
@@ -224,9 +273,14 @@ export default function App() {
         return () => el.removeEventListener('wheel', handler);
     }, []);
 
-    const showToast = useCallback((msg, type = 'success') => {
-        setToast({ msg, type });
-        setTimeout(() => setToast(null), 3000);
+
+
+    // ─── ONBOARDING CHECK ────────────────────────────────────
+    useEffect(() => {
+        const tourDone = localStorage.getItem('gantt-tour-done');
+        if (!tourDone) {
+            setTimeout(() => setShowTour(true), 1000);
+        }
     }, []);
 
     // ─── CRUD ─────────────────────────────────────────────
@@ -436,13 +490,15 @@ export default function App() {
     const taskCount = tasks.filter(t => t.type === 'task' && t.level > 0).length;
 
     return (
-        <div className={cn("h-screen flex flex-col overflow-hidden transition-colors duration-300", darkMode ? "dark bg-slate-900" : "bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-100")}>
+        <div className={cn("min-h-screen flex flex-col transition-colors duration-300 relative", darkMode ? "dark" : "")}>
+            {/* Onboarding Tour */}
+            <OnboardingTour show={showTour} onClose={() => { setShowTour(false); localStorage.setItem('gantt-tour-done', 'true'); }} />
+
             {/* Toast */}
             <AnimatePresence>
                 {toast && (
                     <motion.div initial={{ opacity: 0, y: -40, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -40, x: '-50%' }}
-                        className={cn("fixed top-6 left-1/2 z-[100] px-6 py-3 rounded-2xl shadow-float font-heading font-bold text-sm backdrop-blur-md", toast.type === 'danger' ? 'bg-red-500/90 text-white' : 'bg-primary/90 text-white')}>
-                        {toast.msg}
+                        className={cn("fixed top-6 left-1/2 z-[100] px-6 py-3 rounded-2xl shadow-float font-heading font-bold text-sm glass border-none text-slate-800 dark:text-white", toast.type === 'danger' ? 'bg-red-500/10 text-red-600 border-red-200' : 'bg-primary/10 text-primary border-primary/20')}>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -480,19 +536,45 @@ export default function App() {
                             <Calendar size={14} /> {t.config}
                             {showConfig ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         </Button>
-                        <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')}
-                            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-primary/40 hover:text-primary active:scale-95">
-                            <Globe size={14} /> {lang === 'vi' ? '🇻🇳 VI' : '🇬🇧 EN'}
-                        </button>
-                        {/* Dark Mode Toggle */}
-                        <button onClick={() => setDarkMode(d => !d)}
-                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-600 dark:text-amber-400 hover:text-primary hover:border-primary/30 dark:hover:border-amber-500/30 transition-all active:scale-95" title="Dark Mode">
-                            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-                        </button>
-                        <button onClick={() => setShowGuide(!showGuide)}
-                            className={cn("p-2 rounded-xl border transition-all active:scale-95", showGuide ? "bg-primary/10 border-primary/30 text-primary" : "bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-400 hover:text-primary hover:border-primary/30")}>
-                            <HelpCircle size={18} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {/* User Profile / Login */}
+                            {user ? (
+                                <div className="flex items-center gap-2 mr-2 bg-slate-100 dark:bg-slate-800 rounded-full pl-1 pr-3 py-1 border border-slate-200 dark:border-slate-700">
+                                    {user.photoURL ? (
+                                        <img src={user.photoURL} alt="Avatar" className="w-6 h-6 rounded-full" />
+                                    ) : <User size={16} />}
+                                    <span className="text-xs font-bold truncate max-w-[100px]">{user.displayName}</span>
+                                    <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 ml-1" title="Logout">
+                                        <LogOut size={14} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <Button onClick={handleLogin} className="mr-2 h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200">
+                                    <LogIn size={14} className="mr-1" />
+                                    Sign In
+                                </Button>
+                            )}
+
+                            <button onClick={() => setDensity(d => d === 'comfort' ? 'compact' : 'comfort')}
+                                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-primary/40 hover:text-primary active:scale-95"
+                                title={density === 'comfort' ? "Switch to Compact Mode" : "Switch to Comfort Mode"}>
+                                {density === 'comfort' ? <Maximize2 size={14} className="rotate-45" /> : <Minimize2 size={14} className="rotate-45" />}
+                                {density === 'comfort' ? (lang === 'vi' ? 'Thoáng' : 'Comfort') : (lang === 'vi' ? 'Gọn' : 'Compact')}
+                            </button>
+                            <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')}
+                                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-primary/40 hover:text-primary active:scale-95">
+                                <Globe size={14} /> {lang === 'vi' ? '🇻🇳 VI' : '🇬🇧 EN'}
+                            </button>
+                            {/* Dark Mode Toggle */}
+                            <button onClick={() => setDarkMode(d => !d)}
+                                className="p-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-600 dark:text-amber-400 hover:text-primary hover:border-primary/30 dark:hover:border-amber-500/30 transition-all active:scale-95" title="Dark Mode">
+                                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+                            </button>
+                            <button onClick={() => setShowGuide(!showGuide)}
+                                className={cn("p-2 rounded-xl border transition-all active:scale-95", showGuide ? "bg-primary/10 border-primary/30 text-primary" : "bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-400 hover:text-primary hover:border-primary/30")}>
+                                <HelpCircle size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <AnimatePresence>
@@ -650,10 +732,10 @@ export default function App() {
 
                 {/* Actions + Zoom */}
                 <div className="flex flex-wrap items-center gap-3 p-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-100 dark:border-slate-700 shadow-soft shrink-0">
-                    <Button onClick={handleAddTask} size="sm"><Plus size={14} /> {lang === 'vi' ? 'Thêm Công việc' : 'Add Task'}</Button>
+                    <Button id="tour-add-task" onClick={handleAddTask} size="sm"><Plus size={14} /> {lang === 'vi' ? 'Thêm Công việc' : 'Add Task'}</Button>
                     <Button onClick={handleAddPayment} variant="secondary" size="sm"><CreditCard size={14} /> {lang === 'vi' ? 'Thêm Thanh toán' : 'Add Payment'}</Button>
                     <div className="w-px h-8 bg-slate-200 dark:bg-slate-600 mx-1" />
-                    <Button variant="secondary" size="sm" onClick={handleExportXlsx}><FileSpreadsheet size={14} /> Excel</Button>
+                    <Button id="tour-export" variant="secondary" size="sm" onClick={handleExportXlsx}><FileSpreadsheet size={14} /> Excel</Button>
                     <Button variant="secondary" size="sm" onClick={handleExportPdf}><FileText size={14} /> PDF</Button>
                     <Button variant="secondary" size="sm" onClick={handleExportImage}><FileImage size={14} /> PNG</Button>
                     <div className="w-px h-8 bg-slate-200 dark:bg-slate-600 mx-1" />
@@ -696,7 +778,13 @@ export default function App() {
                                         todayIndex={todayIndex}
                                         isCollapsed={collapsedGroups.has(task.id)}
                                         onToggleCollapse={handleToggleCollapse}
-                                        collapsedMonths={collapsedMonths} />
+                                        collapsedMonths={collapsedMonths}
+                                        density={density}
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                    />
                                 ))}
                             </AnimatePresence>
                         </div>

@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Match any document in the 'projects' collection
+    match /projects/{projectId} {
+      
+      // 1. User-specific projects (e.g., 'user_abc123')
+      // Only the authenticated user matching the ID can read/write
+      allow read, write: if request.auth != null && projectId == 'user_' + request.auth.uid;
+      
+      // 2. Public 'default' project (Legacy/Demo)
+      // Allow anyone to read/write the shared playground
+      allow read, write: if projectId == 'default';
+    }
+  }
+}

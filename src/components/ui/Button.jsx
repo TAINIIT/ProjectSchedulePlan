@@ -1,11 +1,11 @@
-import React from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '../../lib/utils';
 
 const variants = {
-    primary: "bg-primary text-white hover:bg-primary-dark shadow-md hover:shadow-lg",
-    secondary: "bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 hover:border-slate-300 shadow-sm",
-    ghost: "bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200",
-    danger: "bg-danger/10 text-danger hover:bg-danger/20",
+    primary: "bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20",
+    secondary: "bg-white/80 dark:bg-slate-800/80 backdrop-blur-md text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 hover:border-primary/40 transition-all",
+    ghost: "bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400",
+    danger: "bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20",
 };
 
 export const Button = ({ variant = 'primary', size = 'md', className, children, ...props }) => {
@@ -16,9 +16,11 @@ export const Button = ({ variant = 'primary', size = 'md', className, children, 
     };
 
     return (
-        <button
+        <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
             className={cn(
-                "rounded-xl font-heading font-bold transition-all duration-200 flex items-center gap-2 justify-center active:scale-95",
+                "rounded-xl font-heading font-bold transition-colors duration-200 flex items-center gap-2 justify-center",
                 variants[variant],
                 sizeClasses[size],
                 className
@@ -26,6 +28,6 @@ export const Button = ({ variant = 'primary', size = 'md', className, children, 
             {...props}
         >
             {children}
-        </button>
+        </motion.button>
     );
 };

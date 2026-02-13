@@ -4,7 +4,9 @@
 
 @layer base {
   body {
-    @apply bg-background text-slate-800 font-sans antialiased;
+    @apply bg-background text-slate-800 font-sans antialiased bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 fixed inset-0 overflow-y-auto selection:bg-primary/20 selection:text-primary-dark;
+    background-size: 200% 200%;
+    animation: aurora 20s ease infinite;
   }
 
   .dark body,
@@ -41,6 +43,16 @@
 
 html {
   scroll-behavior: smooth;
+}
+
+@layer components {
+  .glass {
+    @apply backdrop-blur-xl bg-white/70 border border-white/20 shadow-glass dark:bg-slate-900/70 dark:border-slate-700/30;
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl transition-all duration-300 hover:shadow-float hover:-translate-y-1;
+  }
 }
 
 /* Number input spinners - hide */

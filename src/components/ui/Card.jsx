@@ -9,8 +9,8 @@ export const Card = ({ children, className, ...props }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
             className={cn(
-                "bg-white dark:bg-slate-800 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700 p-6",
-                "hover:shadow-medium transition-shadow duration-300",
+                "glass shadow-glass text-slate-800 dark:text-slate-100 p-6",
+                "hover:shadow-float transition-all duration-300",
                 className
             )}
             {...props}

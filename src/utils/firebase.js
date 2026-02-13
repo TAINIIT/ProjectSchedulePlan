@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
     getFirestore, doc, setDoc, getDoc
 } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 /* ─── Firebase config ──────────────────────────────────────── */
 const firebaseConfig = {
@@ -16,15 +17,20 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
 /* ─── Document ID for the project data ─────────────────────── */
-const PROJECT_DOC = 'default';   // single-project mode
+// Use 'default' fallback, but ideally we use user-specific IDs
+const DEFAULT_DOC = 'default';
 
 /* ─── Save project data to Firestore ───────────────────────── */
-export async function saveToFirestore(data) {
+export async function saveToFirestore(data, userId = null) {
     try {
-        await setDoc(doc(db, 'projects', PROJECT_DOC), {
+        const docId = userId ? `user_${userId}` : DEFAULT_DOC;
+        await setDoc(doc(db, 'projects', docId), {
             ...data,
+            ownerId: userId,
             updatedAt: new Date().toISOString(),
         });
         return true;
@@ -35,15 +41,17 @@ export async function saveToFirestore(data) {
 }
 
 /* ─── Load project data from Firestore ─────────────────────── */
-export async function loadFromFirestore() {
+export async function loadFromFirestore(userId = null) {
     try {
-        const snap = await getDoc(doc(db, 'projects', PROJECT_DOC));
+        const docId = userId ? `user_${userId}` : DEFAULT_DOC;
+        const snap = await getDoc(doc(db, 'projects', docId));
         if (snap.exists()) return snap.data();
         return null;
     } catch (err) {
         console.error('[Firebase] Load failed:', err);
-        return null;
+        return null; // Return null to handle empty state in UI
     }
 }
 
-export { db };
+export { db, auth, googleProvider };
+export { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
